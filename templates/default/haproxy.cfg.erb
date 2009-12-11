@@ -1,0 +1,35 @@
+global
+  log noc local1 warning
+  maxconn 2048
+  user <%= @node[:haproxy][:user] %>
+  group <%= @node[:haproxy][:user] %>
+  pidfile /var/run/haproxy/<%= @name %>.pid
+  stats socket /var/run/haproxy/<%= @name %>.stats
+
+defaults
+  log global
+  balance roundrobin
+  option dontlognull
+  option redispatch
+  retries 3
+  contimeout <%= @config.has_key?(:conn_timeout) ? @config[:conn_timeout] : "60s" %>
+  clitimeout <%= @config.has_key?(:client_timeout) ? @config[:client_timeout] : "60s" %>
+  srvtimeout <%= @config.has_key?(:server_timeout) ? @config[:server_timeout] : "60s" %>
+
+<% @config[:listeners].each do |instance_name, config| -%>
+listen <%= instance_name %> <%= config[:ip] %>:<%= config[:port] %>
+  mode <%= config[:mode] %>
+  <% config[:options].each do |option| -%>
+  option <%= option %>
+  <% end -%>
+  <% config[:errorfiles].each do |error| -%>
+  errorfile <%= error[:code] %> <%= error[:file_path] %>
+  <% end -%>
+  <% config[:backends].each do |b_name, b_config| %>
+  server <%= b_name %>_<%= b_config[:port] %> <%= b_config[:ip] %>:<%= b_config[:port] %> <%= b_config[:options] %>
+  <% end -%>
+
+listen <%= instance_name %>_admin <%= config[:ip] %>:<%= config[:admin_port] %>
+  mode http
+  stats uri /
+<% end -%>
