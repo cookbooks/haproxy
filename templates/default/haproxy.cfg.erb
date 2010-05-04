@@ -11,25 +11,47 @@ defaults
   balance roundrobin
   option dontlognull
   option redispatch
+  mode http
   retries 3
   contimeout <%= @config.has_key?(:conn_timeout) ? @config[:conn_timeout] : "60s" %>
   clitimeout <%= @config.has_key?(:client_timeout) ? @config[:client_timeout] : "60s" %>
   srvtimeout <%= @config.has_key?(:server_timeout) ? @config[:server_timeout] : "60s" %>
+  errorfile 500 /etc/haproxy/500.http
+  
+<% @config[:frontends].each do |instance_name, config| -%>
 
-<% @config[:listeners].each do |instance_name, config| -%>
-listen <%= instance_name %> <%= config[:ip] %>:<%= config[:port] %>
+frontend <%= instance_name %> <%= config[:ip] || "0.0.0.0" %>:<%= config[:port] || "10#{instance_name.sum.to_s[0..2]}" %>
+
+  <% if config[:mode] %>
   mode <%= config[:mode] %>
+  <% end -%>
+
+  <% if config[:options] %>
   <% config[:options].each do |option| -%>
   option <%= option %>
   <% end -%>
   <% config[:errorfiles].each do |error| -%>
   errorfile <%= error[:code] %> <%= error[:file_path] %>
   <% end -%>
-  <% config[:backends].each do |b_name, b_config| %>
-  server <%= b_name %>_<%= b_config[:port] %> <%= b_config[:ip] %>:<%= b_config[:port] %> <%= b_config[:options] %>
+  <% end -%>
+  
+  acl asset        hdr_beg(host) -i asset0. asset1. asset2. asset3.
+  acl not_asset    !hdr_beg(host) -i asset0. asset1. asset2. asset3.
+  use_backend      asset_hosts if asset
+  use_backend      app_hosts if not_asset
+
+  backend asset_hosts
+    server asset_01 asset-01:80
+    server asset_01 asset-02:80
+  
+  <% config[:backends].each do |b_name, b_conf| %>
+  backend <%= b_name %>
+    <% b_conf[:servers].each do |server| %>
+    server <%= server[:hostname].gsub("-", "_") %>_80 <%= server[:hostname] %>:80 <%= b_conf[:server_options] %>
+    <% end -%>
   <% end -%>
 
-listen <%= instance_name %>_admin <%= config[:ip] %>:<%= config[:admin_port] %>
+listen <%= instance_name %>_admin <%= config[:ip] || "0.0.0.0" %>:10<%= (instance_name.sum.to_s[0..2].to_i + 1).to_s %>
   mode http
   stats uri /
 <% end -%>

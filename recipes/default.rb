@@ -1,4 +1,3 @@
-
 package "haproxy" do
   action :install
 end
@@ -31,14 +30,31 @@ remote_file "/etc/sysctl.d/20-ip-nonlocal-bind.conf" do
   mode 0644
 end
 
+template "/etc/haproxy/500.http"
+
+search(:apps) do |app|
+  next unless app[:environments]
+  app[:environments].keys.each do |env|
+    app_nodes = []
+    search(:node, "active_applications:#{app['id']}") do |app_node|
+      app_nodes << app_node if app_node[:active_applications][app['id']][:env] == env
+    end
+    node[:haproxy][:instances]["#{app['id']}_#{env}"] = {
+      :frontends => {
+        "#{app['id']}_#{env}" => {
+          :backends => {
+            "app_hosts" => {
+              :servers => app_nodes
+            }
+          }
+        }
+      }
+    }
+  end
+end
+
 node[:haproxy][:instances].each do |name, config|
   
-  config[:listeners].each do |listener_name, listener_config|
-    [ :options, :errorfiles, :backends ].each do |key|
-      config[:listeners][listener_name][key] = Mash.new unless listener_config.has_key?(key)
-    end
-  end
-
   template "/etc/init.d/haproxy_#{name}" do
     source "haproxy.init.erb"
     variables(:name => name)
