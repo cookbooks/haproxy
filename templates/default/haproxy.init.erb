@@ -30,6 +30,8 @@ case "$1" in
 start)
   log_daemon_msg "Starting HAproxy (${NAME})"
   ${HAPROXY_BIN} -D -f ${CONFIG}
+  chmod 664 /var/run/haproxy/<%= @name %>.stats
+  chown <%= @node[:haproxy][:user] %>:<%= @node[:haproxy][:group] %> /var/run/haproxy/<%= @name %>.stats
   log_end_msg $?
   ;;
 stop)
@@ -40,11 +42,15 @@ stop)
 restart)
   log_daemon_msg "Forcefully restarting HAproxy (${NAME})"
   ${HAPROXY_BIN} -D -f ${CONFIG} -st `cat ${PID_FILE}`
+  chmod 664 /var/run/haproxy/<%= @name %>.stats
+  chown <%= @node[:haproxy][:user] %>:<%= @node[:haproxy][:group] %> /var/run/haproxy/<%= @name %>.stats
   log_end_msg $?
   ;;
 reload)
   log_daemon_msg "Gracefully restarting HAproxy (${NAME})"
   ${HAPROXY_BIN} -D -f ${CONFIG} -sf `cat ${PID_FILE}`
+  chmod 664 /var/run/haproxy/<%= @name %>.stats
+  chown <%= @node[:haproxy][:user] %>:<%= @node[:haproxy][:group] %> /var/run/haproxy/<%= @name %>.stats
   log_end_msg $?
   ;;
 esac

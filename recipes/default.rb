@@ -2,6 +2,9 @@ package "haproxy" do
   action :install
 end
 
+include_recipe "ganglia::client"
+include_recipe "nginx"
+
 directory "/etc/haproxy" do
   action :create
   owner "root"
@@ -23,7 +26,7 @@ directory "/var/run/haproxy" do
   mode 0750
 end
 
-remote_file "/etc/sysctl.d/20-ip-nonlocal-bind.conf" do
+cookbook_file "/etc/sysctl.d/20-ip-nonlocal-bind.conf" do
   source "20-ip-nonlocal-bind.conf"
   owner "root"
   group "root"
@@ -32,14 +35,24 @@ end
 
 template "/etc/haproxy/500.http"
 
+instances = {}
+
 search(:apps) do |app|
-  next unless app[:environments]
+  next unless app[:environments] && node[:active_applications][app['id']]
   app[:environments].keys.each do |env|
+    next unless node[:active_applications][app['id'].to_s]['env'] == env
     app_nodes = []
-    search(:node, "active_applications:#{app['id']}") do |app_node|
-      app_nodes << app_node if app_node[:active_applications][app['id']][:env] == env
+    search(:node, "role:#{app['id']}-app OR (role:staging AND active_applications:#{app['id']})") do |app_node|
+      next if app_node[:hostname].match(/cron|^bc-intl/) # super hacky
+      app_nodes << [app_node[:hostname], app_node[:ipaddress]] if app_node[:active_applications][app['id']][:env] == env
     end
-    node[:haproxy][:instances]["#{app['id']}_#{env}"] = {
+    instances["#{app['id']}_#{env}"] = {
+      :admin_subdomains => app[:admin_subdomains],
+      :ssl_vhosts => app[:environments][env.to_s][:ssl_vhosts],
+      :maxconn => app[:environments][env.to_s]["worker_count"],
+      :proxy_vip_octet => app[:proxy_vip_octet],
+      :proxy_acls => app[:proxy_acls] || [],
+      :proxy_backends => app[:proxy_backends] || [],
       :frontends => {
         "#{app['id']}_#{env}" => {
           :backends => {
@@ -53,8 +66,7 @@ search(:apps) do |app|
   end
 end
 
-node[:haproxy][:instances].each do |name, config|
-  
+instances.each do |name, config|
   template "/etc/init.d/haproxy_#{name}" do
     source "haproxy.init.erb"
     variables(:name => name)
@@ -76,5 +88,29 @@ node[:haproxy][:instances].each do |name, config|
     group node[:haproxy][:group]
     mode 0640
     notifies :reload, resources(:service => "haproxy_#{name}")
+  end
+  
+  (config[:ssl_vhosts] || {}).each do |domain, vhost_vip_octet|
+    vhost_name = domain.gsub(/^\*\./, '').gsub(/\./, '_')
+    ssl_certificate domain
+    
+    template "/etc/nginx/sites-enabled/#{name}-#{vhost_name}_ssl" do
+      source "nginx-ssl.cfg.erb"
+      variables(
+        :proxy_vip => "#{node[:proxy][:vip_prefix]}.#{config[:proxy_vip_octet]}",
+        :vhost_vip => "#{node[:proxy][:vip_prefix]}.#{vhost_vip_octet}",
+        :certificate => domain =~ /\*\.(.+)/ ? "#{$1}_wildcard" : domain
+      )
+    end
+
+    nginx_site "#{name}_ssl"
+  end
+  
+  if node[:ganglia] && node[:ganglia][:cluster_name] == "Proxy"
+    cron "gather ganglia haproxy statistics for #{name}" do
+      command "/usr/local/bin/ganglia_haproxy_stats.rb -p /var/run/haproxy/#{name}.stats"
+      minute "*"
+      user "ganglia"
+    end
   end
 end
