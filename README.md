@@ -7,6 +7,9 @@ Changes
 =======
 
 ## v1.0.4:
+
+Numerous load balancer recipe improvements:
+* add SSL support
 * enable customization of load balancing algorithm (defaults to roundrobin)
 * enable customization of incoming port (defaults to 80)
 * enable customization of max number of connections per app server (defaults to 1)
@@ -44,9 +47,12 @@ Attributes
 * `node['haproxy']['enable_admin']` - whether to enable the admin interface. default true. Listens on port 22002.
 * `node['haproxy']['app_server_role']` - used by the `app_lb` recipe to search for a specific role of member systems. Default `webserver`.
 * `node['haproxy']['balance_algorithm']` - sets the load balancing algorithm; defaults to roundrobin.
-* `node['haproxy']['incoming_port']` - sets the port on which haproxy listens
+* `node['haproxy']['incoming_port']` - sets the port on which haproxy listens, default 80
 * `node['haproxy']['max_connections_per_server']` - the maxconn value to be set for each app server
 * `node['haproxy']['add_x_forwarded_for']` - if true, creates an X-Forwarded-For header containing the original client's IP address.
+* `node['haproxy']['ssl_enabled']` - whether or not to create listeners for ssl, default false
+* `node['haproxy']['ssl_member_port']` - the port that member systems will be listening on for ssl, default 8443
+* `node['haproxy']['ssl_incoming_port']` - sets the port on which haproxy listens for ssl, default 443
 
 Usage
 =====
